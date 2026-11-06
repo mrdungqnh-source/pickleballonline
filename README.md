@@ -11,6 +11,12 @@ Static, dependency-free MVP for the pickleball RPG concept. Open `index.html` di
 - **Payments:** A payment provider webhook must verify its signature and idempotency key before crediting a wallet ledger. The browser only creates a pending top-up intent and displays the provider's QR. Never put webhook secrets in GitHub Pages.
 - **Deployment:** A GitHub Actions workflow publishes the static files to Pages on every push to `main`; no build step or package install is required.
 
+## Supabase foundation
+
+The initial database migration is in `supabase/migrations/20261106000100_initial_schema.sql`. In Supabase, create a project, open **SQL Editor**, and run the migration there. It creates the profile/character, shop/inventory, tournament/bracket, wallet ledger, and public configuration tables; enables RLS; and creates a profile plus starter stats for each new Auth user.
+
+The browser can read its own profile, character stats, inventory, and ledger. A player may update only their display name and avatar. Client roles, balances, EXP, levels, stats, purchases, registrations, pairings, match results, and rewards are not writable directly; implement those through validated database functions or Supabase Edge Functions before wiring the UI to live data. Never put the Supabase `service_role` key in this repository or frontend.
+
 ## Mechanics represented in the demo
 
 - EXP requirement is `baseExp * level^difficulty`; repeated level-ups grant one skill and one body point each.
