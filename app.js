@@ -1,4 +1,4 @@
-const supabase = window.courtsideSupabase;
+const supabaseClient = window.courtsideSupabase;
 const STORAGE_KEY = "courtside-demo-v1";
 const DEFAULT_CONFIG = { baseExp: 100, difficulty: 1.5, matchFatigue: 0.3, recoveryHours: 4, advancedLevel: 40, skillPointsPerLevel: 1, bodyPointsPerLevel: 1 };
 const DEFAULT_STATE = {
@@ -75,7 +75,7 @@ function renderAuthModal(mode) {
 }
 
 async function loadCloudProfile(user) {
-  const { data: profile, error: profileError } = await supabase
+  const { data: profile, error: profileError } = await supabaseClient
     .from("profiles")
     .select("id, username, role, reward_points, cash_balance, level, current_exp, unspent_skill_points, unspent_body_points")
     .eq("id", user.id)
@@ -86,7 +86,7 @@ async function loadCloudProfile(user) {
     return;
   }
 
-  const { data: character, error: characterError } = await supabase
+  const { data: character, error: characterError } = await supabaseClient
     .from("character_stats")
     .select("stamina, flexibility, agility, fatigue_penalty, last_match_at, skills")
     .eq("user_id", user.id)
@@ -118,8 +118,8 @@ async function loadCloudProfile(user) {
 }
 
 async function initializeAuth() {
-  if (!supabase) return;
-  supabase.auth.onAuthStateChange((event, session) => {
+  if (!supabaseClient) return;
+  supabaseClient.auth.onAuthStateChange((event, session) => {
     if (session?.user && event === "INITIAL_SESSION") {
       window.setTimeout(() => loadCloudProfile(session.user), 0);
     } else if (event === "SIGNED_OUT") {
@@ -128,7 +128,7 @@ async function initializeAuth() {
       render();
     }
   });
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await supabaseClient.auth.getSession();
   if (session?.user) await loadCloudProfile(session.user);
 }
 
@@ -230,9 +230,9 @@ document.addEventListener("click", (event) => {
   if (control.classList.contains("modal-backdrop") && control !== event.target) return;
   const { action, key } = control.dataset;
   if (action === "auth") {
-    if (!supabase) return notify("Không tải được Supabase SDK. Hãy tải lại trang.");
+    if (!supabaseClient) return notify("Không tải được Supabase SDK. Hãy tải lại trang.");
     if (authUser) {
-      supabase.auth.signOut().then(({ error }) => {
+      supabaseClient.auth.signOut().then(({ error }) => {
         if (error) notify("Không thể đăng xuất. Hãy thử lại.");
       });
     } else renderAuthModal("signin");
@@ -281,7 +281,7 @@ document.addEventListener("submit", async (event) => {
   try {
     if (authMode === "signup") {
       const username = String(values.get("username")).trim();
-      const { data, error } = await supabase.auth.signUp({
+      const { data, error } = await supabaseClient.auth.signUp({
         email,
         password,
         options: {
@@ -293,7 +293,7 @@ document.addEventListener("submit", async (event) => {
       if (data.session && data.user) await loadCloudProfile(data.user);
       else document.querySelector("#modal-root").innerHTML = '<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true"><h2>Kiểm tra email</h2><p>Supabase đã gửi thư xác nhận. Mở liên kết trong email để kích hoạt tài khoản, sau đó đăng nhập tại đây.</p><div class="modal-actions"><button class="primary-button" data-action="close-modal">Đã hiểu</button></div></section></div>';
     } else {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
       if (error) throw error;
       if (data.user) await loadCloudProfile(data.user);
     }
