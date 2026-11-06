@@ -196,6 +196,7 @@ function renderTournaments() {
   return `${pageHeading("SEASON 04 · COMPETITIVE PLAY", "Giải đấu", "Đăng ký thi đấu, xây dựng đội hình và chinh phục bảng xếp hạng.")}
     <div class="balance-bar"><span>Hạng hiện tại <strong>Rookie</strong></span><span>Level <strong>${state.profile.level}</strong></span></div>
     <div id="tournament-list" class="tournament-list"><div class="empty-state">Đang tải giải đấu...</div></div>
+    <div id="my-match-list"></div>
     <section class="page-section panel panel-pad"><div class="panel-heading"><h2>Lộ trình thi đấu</h2><span class="status-pill">32 ĐÔI · SINGLE ELIMINATION</span></div><div class="bracket"><div class="bracket-round"><strong>VÒNG 1/16</strong><span>32 đội · 16 trận</span></div><div class="bracket-round"><strong>TỨ KẾT</strong><span>8 đội · 4 trận</span></div><div class="bracket-round"><strong>BÁN KẾT</strong><span>4 đội · 2 trận</span></div><div class="bracket-round"><strong>CHUNG KẾT</strong><span>2 đội · 1 trận</span></div></div></section>`;
 }
 
@@ -245,6 +246,46 @@ async function loadTournamentList(view, user) {
           : '<button class="secondary-button" disabled>Đang diễn ra</button>';
     return `<section class="panel tournament-card"><div><div class="tourney-kicker">${tournament.matching_type === "random" ? "CÁ NHÂN · GHÉP ĐÔI NGẪU NHIÊN" : "ĐÔI · MỜI BẠN CHƠI"} · LEVEL ${tournament.level_bracket}+</div><h2>${escapeHtml(tournament.name)}</h2><p>Đăng ký cá nhân, hệ thống ghép cặp khi giải bắt đầu.</p><div class="tourney-data"><span>Ngày thi đấu<strong>${starts}</strong></span><span>Sức chứa<strong>${tournament.max_pairs * 2} người</strong></span><span>Điều kiện<strong>Level ${tournament.level_bracket}+</strong></span></div></div><div class="tournament-status"><span class="status-pill ${isOpen ? "live" : ""}">${isOpen ? "ĐANG MỞ ĐĂNG KÝ" : "ĐANG DIỄN RA"}</span><br/>${registration}</div></section>`;
   }).join("");
+  if (user) await loadMyTournamentMatches(view, user, tournaments);
+}
+
+async function loadMyTournamentMatches(view, user, tournaments) {
+  const mount = view.querySelector("#my-match-list");
+  const activeTournaments = tournaments.filter((tournament) => tournament.status === "in_progress");
+  if (!mount || !activeTournaments.length) return;
+
+  const { data: teams, error: teamError } = await supabaseClient
+    .from("tournament_teams")
+    .select("id, tournament_id")
+    .or(`player_a_id.eq.${user.id},player_b_id.eq.${user.id}`)
+    .in("tournament_id", activeTournaments.map((tournament) => tournament.id));
+  if (!mount.isConnected || currentRoute() !== "tournaments" || teamError || !teams?.length) return;
+
+  const teamIds = new Set(teams.map((team) => team.id));
+  const tournamentNames = new Map(activeTournaments.map((tournament) => [tournament.id, tournament.name]));
+  const { data: matches, error } = await supabaseClient
+    .from("matches")
+    .select("id, tournament_id, round_number, match_number, team_a_id, team_b_id, winner_team_id, scheduled_at")
+    .in("tournament_id", activeTournaments.map((tournament) => tournament.id))
+    .order("round_number", { ascending: true })
+    .order("match_number", { ascending: true });
+  if (!mount.isConnected || currentRoute() !== "tournaments" || error || !matches?.length) return;
+
+  const mine = matches.filter((match) => teamIds.has(match.team_a_id) || teamIds.has(match.team_b_id));
+  const match = mine.find((item) => !item.winner_team_id && item.team_a_id && item.team_b_id)
+    || mine.find((item) => !item.winner_team_id);
+  if (!match) return;
+
+  const myTeamId = teams.find((team) => team.tournament_id === match.tournament_id)?.id;
+  const waiting = !match.team_a_id || !match.team_b_id;
+  const scheduledAt = match.scheduled_at ? new Date(match.scheduled_at) : null;
+  const canResolve = !waiting && (!scheduledAt || scheduledAt.getTime() <= Date.now());
+  const message = waiting
+    ? "Đã vào nhánh. Chờ kết quả vòng trước để biết đối thủ."
+    : canResolve
+      ? "CP và yếu tố phong độ sẽ được tính tại server; kết quả không thể sửa từ trình duyệt."
+      : `Trận bắt đầu ${scheduledAt.toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" })}.`;
+  mount.innerHTML = `<section class="panel live-match-card"><div><div class="tourney-kicker">${escapeHtml(tournamentNames.get(match.tournament_id) || "TOURNAMENT")}</div><h2>${waiting ? "Đang chờ đối thủ" : `Vòng ${match.round_number} · Trận ${match.match_number}`}</h2><p>${message}</p></div><div class="live-match-action">${waiting ? '<span class="status-pill">CHỜ NHÁNH</span>' : `<button class="dark-button" data-action="resolve-match" data-key="${match.id}" data-my-team="${myTeamId}" ${canResolve ? "" : "disabled"}>${canResolve ? "Phân định kết quả" : "Chưa đến giờ đấu"}</button>`}</div></section>`;
 }
 
 async function registerOnlineTournament(tournamentId, button) {
@@ -264,6 +305,21 @@ async function registerOnlineTournament(tournamentId, button) {
     return;
   }
   notify(`Đăng ký thành công · ${data.entries_count}/${data.max_players} người.`);
+  await loadTournamentList(document.querySelector("#view"), authUser);
+}
+
+async function resolveOnlineMatch(matchId, button) {
+  button.disabled = true;
+  const { data, error } = await supabaseClient.rpc("resolve_tournament_match", { p_match_id: matchId });
+  if (error) {
+    button.disabled = false;
+    notify(error.message?.includes("not started yet")
+      ? "Trận đấu chưa đến giờ bắt đầu."
+      : "Chưa thể phân định trận đấu. Hãy tải lại và thử lại.");
+    return;
+  }
+  const won = data.winner_team_id === button.dataset.myTeam;
+  notify(`${won ? "Bạn thắng" : "Bạn thua"} · CP ${data.combat_power_a}–${data.combat_power_b}${data.tournament_completed ? " · Giải đã kết thúc" : " · Đội thắng đi tiếp"}`);
   await loadTournamentList(document.querySelector("#view"), authUser);
 }
 function renderShop() {
@@ -834,6 +890,8 @@ document.addEventListener("click", (event) => {
     renderAuthModal(authMode === "signin" ? "signup" : "signin");
   } else if (action === "register-online") {
     void registerOnlineTournament(key, control);
+  } else if (action === "resolve-match") {
+    void resolveOnlineMatch(key, control);
   } else if (action.startsWith("arena-")) {
     arenaController?.handle(action, key);
   } else if (action === "train") {
