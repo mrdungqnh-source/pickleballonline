@@ -267,6 +267,7 @@ document.addEventListener("click", (event) => {
   } else if (action === "close-modal") document.querySelector("#modal-root").innerHTML = "";
 });
 
+document.addEventListener("submit", async (event) => {
   if (event.target.id !== "auth-form") return;
   event.preventDefault();
   const form = event.target;
