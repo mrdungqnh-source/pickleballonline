@@ -267,6 +267,7 @@ h1 { margin-bottom: 6px; font: 600 27px/1.1 var(--font-display); letter-spacing:
 .tourney-data strong { color: #37473d; display: block; font: 600 11px var(--font-display); margin-top: 3px; }
 .tournament-status { text-align: right; }
 .tournament-status .status-pill { display: inline-block; margin-bottom: 9px; }
+.admin-start-button { display: flex; margin: 8px 0 0 auto; color: #607654; }
 .bracket { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .bracket-round { padding: 12px 10px; background: #f8faf7; border: 1px solid #e8ede7; border-radius: 4px; }
 .bracket-round strong { display: block; font: 600 10px var(--font-display); margin-bottom: 7px; }
@@ -352,6 +353,7 @@ h1 { margin-bottom: 6px; font: 600 27px/1.1 var(--font-display); letter-spacing:
   .tournament-card { grid-template-columns: 1fr; }
   .live-match-card { align-items: flex-start; flex-direction: column; }
   .tournament-status { text-align: left; }
+  .admin-start-button { margin-left: 0; }
   .bracket { grid-template-columns: repeat(2, 1fr); }
   .app-footer { padding: 13px 16px; }
 }

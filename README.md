@@ -23,6 +23,8 @@ Online training is implemented by `supabase/migrations/20261106000200_secure_tra
 
 Tournament registration is implemented by `supabase/migrations/20261106000300_tournament_registration.sql`. It seeds two open random-pair tournaments and exposes `register_for_tournament()` to authenticated users only. The function checks the player's level and locks the tournament while checking capacity. Once 64 players have registered, the next migration pairs players randomly, builds the bracket, and exposes a participant-only resolver that computes combat power, fatigue, advancement, and champion/runner-up rewards server-side. The client cannot submit a winner or score.
 
+`supabase/migrations/20261106000500_underfilled_tournaments.sql` lets an admin start an open random tournament with any even number of at least four registered players. The bracket is padded to the next power of two and missing slots become byes. Odd player counts wait for another registration; admins can start from the tournament page.
+
 ## Mechanics represented in the demo
 
 - EXP requirement is `baseExp * level^difficulty`; repeated level-ups grant one skill and one body point each.

@@ -3,7 +3,7 @@ import { supabaseClient } from "./supabase-client.js?v=2";
 const STORAGE_KEY = "courtside-demo-v1";
 const DEFAULT_CONFIG = { baseExp: 100, difficulty: 1.5, matchFatigue: 0.3, recoveryHours: 4, advancedLevel: 40, skillPointsPerLevel: 1, bodyPointsPerLevel: 1 };
 const DEFAULT_STATE = {
-  profile: { username: "Minh Anh", level: 12, exp: 1120, rewardPoints: 850, cashBalance: 0, skillPoints: 3, bodyPoints: 2, fatigue: 0.3, lastMatchAt: Date.now() - 45 * 60 * 1000 },
+  profile: { username: "Minh Anh", role: "player", level: 12, exp: 1120, rewardPoints: 850, cashBalance: 0, skillPoints: 3, bodyPoints: 2, fatigue: 0.3, lastMatchAt: Date.now() - 45 * 60 * 1000 },
   body: { stamina: 15, flexibility: 14, agility: 16 },
   skills: { drive: 18, drop: 14, backhand: 12, dink: 16, flick: 0, roll: 0, volley: 0, lob: 0 },
   inventory: [],
@@ -57,6 +57,10 @@ function render() {
   view.innerHTML = ({ home: renderHome, training: renderTraining, court: renderCourt, tournaments: renderTournaments, shop: renderShop, admin: renderAdmin }[route])();
   view.classList.toggle("arena-view", route === "court");
   if (route === "court") arenaController = createArenaController(view);
+  if (route === "tournaments") {
+    view.querySelector(".bracket").id = "tournament-bracket";
+    view.querySelector(".bracket").closest(".panel").querySelector(".status-pill").id = "tournament-bracket-summary";
+  }
   if (route === "tournaments") void loadTournamentList(view, authUser);
   if (route === "training") {
     const rewardNote = view.querySelector(".content-grid > .stack:last-child .panel:last-child p:last-child");
@@ -110,6 +114,7 @@ async function loadCloudProfile(user) {
   state.profile = {
     ...state.profile,
     username: profile.username,
+    role: profile.role,
     level: profile.level,
     exp: profile.current_exp,
     rewardPoints: profile.reward_points,
@@ -206,7 +211,7 @@ async function loadTournamentList(view, user) {
 
   const { data: tournaments, error } = await supabaseClient
     .from("tournaments")
-    .select("id, name, level_bracket, max_pairs, matching_type, status, starts_at")
+    .select("id, name, level_bracket, max_pairs, matching_type, status, starts_at, bracket_data")
     .in("status", ["open", "in_progress"])
     .order("starts_at", { ascending: true });
   if (!list.isConnected || currentRoute() !== "tournaments") return;
@@ -234,6 +239,8 @@ async function loadTournamentList(view, user) {
     const entry = entries.find((item) => item.tournament_id === tournament.id);
     const registered = entry && entry.status !== "withdrawn";
     const isOpen = tournament.status === "open";
+    const capacityPairs = Number(tournament.bracket_data?.capacity_pairs ?? tournament.max_pairs);
+    const actualPairs = Number(tournament.bracket_data?.actual_pairs ?? tournament.max_pairs);
     const starts = tournament.starts_at
       ? new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "short" }).format(new Date(tournament.starts_at))
       : "Chưa ấn định";
@@ -244,9 +251,34 @@ async function loadTournamentList(view, user) {
         : isOpen
           ? '<button class="secondary-button" data-action="auth">Đăng nhập để đăng ký</button>'
           : '<button class="secondary-button" disabled>Đang diễn ra</button>';
-    return `<section class="panel tournament-card"><div><div class="tourney-kicker">${tournament.matching_type === "random" ? "CÁ NHÂN · GHÉP ĐÔI NGẪU NHIÊN" : "ĐÔI · MỜI BẠN CHƠI"} · LEVEL ${tournament.level_bracket}+</div><h2>${escapeHtml(tournament.name)}</h2><p>Đăng ký cá nhân, hệ thống ghép cặp khi giải bắt đầu.</p><div class="tourney-data"><span>Ngày thi đấu<strong>${starts}</strong></span><span>Sức chứa<strong>${tournament.max_pairs * 2} người</strong></span><span>Điều kiện<strong>Level ${tournament.level_bracket}+</strong></span></div></div><div class="tournament-status"><span class="status-pill ${isOpen ? "live" : ""}">${isOpen ? "ĐANG MỞ ĐĂNG KÝ" : "ĐANG DIỄN RA"}</span><br/>${registration}</div></section>`;
+    const adminStart = user && state.profile.role === "admin" && isOpen
+      ? `<button class="quiet-button admin-start-button" data-action="start-underfilled" data-key="${tournament.id}">Khởi chạy với số đôi hiện có</button>`
+      : "";
+    return `<section class="panel tournament-card"><div><div class="tourney-kicker">${tournament.matching_type === "random" ? "CÁ NHÂN · GHÉP ĐÔI NGẪU NHIÊN" : "ĐÔI · MỜI BẠN CHƠI"} · LEVEL ${tournament.level_bracket}+</div><h2>${escapeHtml(tournament.name)}</h2><p>${isOpen ? "Đăng ký cá nhân, ghép cặp khi giải bắt đầu hoặc admin khởi chạy sớm." : "Các đôi đấu loại trực tiếp; bye tự động đi tiếp."}</p><div class="tourney-data"><span>Ngày thi đấu<strong>${starts}</strong></span><span>${isOpen ? "Sức chứa" : "Đã ghép"}<strong>${isOpen ? `${capacityPairs * 2} người` : `${actualPairs} đôi`}</strong></span><span>Điều kiện<strong>Level ${tournament.level_bracket}+</strong></span></div></div><div class="tournament-status"><span class="status-pill ${isOpen ? "live" : ""}">${isOpen ? "ĐANG MỞ ĐĂNG KÝ" : "ĐANG DIỄN RA"}</span><br/>${registration}${adminStart}</div></section>`;
   }).join("");
+  updateTournamentBracket(view, tournaments);
   if (user) await loadMyTournamentMatches(view, user, tournaments);
+}
+
+function updateTournamentBracket(view, tournaments) {
+  const active = tournaments.find((tournament) => tournament.status === "in_progress" && tournament.bracket_data?.actual_pairs);
+  if (!active) return;
+  const mount = view.querySelector("#tournament-bracket");
+  const summary = view.querySelector("#tournament-bracket-summary");
+  if (!mount || !summary) return;
+
+  const actualPairs = Number(active.bracket_data.actual_pairs);
+  const bracketSize = Number(active.bracket_data.bracket_size);
+  const rounds = Number(active.bracket_data.rounds);
+  const byes = Number(active.bracket_data.byes || 0);
+  summary.textContent = `${actualPairs} ĐÔI · ${byes} BYE · ${rounds} VÒNG`;
+  mount.innerHTML = Array.from({ length: rounds }, (_, index) => {
+    const matchCount = Math.ceil(bracketSize / 2 ** (index + 1));
+    const entrants = Math.ceil(actualPairs / 2 ** index);
+    const title = matchCount === 1 ? "CHUNG KẾT" : matchCount === 2 ? "BÁN KẾT" : matchCount === 4 ? "TỨ KẾT" : `VÒNG ${index + 1}`;
+    const byeNote = index === 0 && byes > 0 ? ` · ${byes} bye` : "";
+    return `<div class="bracket-round"><strong>${title}</strong><span>${matchCount} trận · ${entrants} đôi${byeNote}</span></div>`;
+  }).join("");
 }
 
 async function loadMyTournamentMatches(view, user, tournaments) {
@@ -305,6 +337,24 @@ async function registerOnlineTournament(tournamentId, button) {
     return;
   }
   notify(`Đăng ký thành công · ${data.entries_count}/${data.max_players} người.`);
+  await loadTournamentList(document.querySelector("#view"), authUser);
+}
+
+async function startUnderfilledTournament(tournamentId, button) {
+  button.disabled = true;
+  const { data, error } = await supabaseClient.rpc("admin_start_tournament", { p_tournament_id: tournamentId });
+  if (error) {
+    button.disabled = false;
+    notify(error.message?.includes("Admin role required")
+      ? "Chỉ admin mới có thể khởi chạy giải."
+      : error.message?.includes("even number")
+        ? "Số người đăng ký đang lẻ; cần đủ cặp hoàn chỉnh."
+        : error.message?.includes("complete pairs")
+          ? "Cần ít nhất 2 đôi hoàn chỉnh (4 người)."
+          : "Chưa thể khởi chạy giải. Hãy tải lại và thử lại.");
+    return;
+  }
+  notify(`Đã ghép ${data.pairs} đôi · ${data.byes} bye · ${data.rounds} vòng.`);
   await loadTournamentList(document.querySelector("#view"), authUser);
 }
 
@@ -890,6 +940,8 @@ document.addEventListener("click", (event) => {
     renderAuthModal(authMode === "signin" ? "signup" : "signin");
   } else if (action === "register-online") {
     void registerOnlineTournament(key, control);
+  } else if (action === "start-underfilled") {
+    void startUnderfilledTournament(key, control);
   } else if (action === "resolve-match") {
     void resolveOnlineMatch(key, control);
   } else if (action.startsWith("arena-")) {
