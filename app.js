@@ -1,3 +1,5 @@
+import { supabase } from "./supabase-client.js";
+
 const STORAGE_KEY = "courtside-demo-v1";
 const DEFAULT_CONFIG = { baseExp: 100, difficulty: 1.5, matchFatigue: 0.3, recoveryHours: 4, advancedLevel: 40, skillPointsPerLevel: 1, bodyPointsPerLevel: 1 };
 const DEFAULT_STATE = {
@@ -20,6 +22,8 @@ const ITEMS = [
 const ROUTES = { home: "Tổng quan", training: "Tập luyện", tournaments: "Giải đấu", shop: "Cửa hàng", admin: "Quản trị" };
 let state = loadState();
 let toastTimer;
+let authUser = null;
+let authMode = "signin";
 
 function loadState() {
   try {
@@ -39,6 +43,10 @@ function escapeHtml(value) { return String(value).replace(/[&<>"']/g, (char) => 
 
 function render() {
   const route = ROUTES[currentRoute()] ? currentRoute() : "home";
+  const authButton = document.querySelector("#auth-button");
+  authButton.textContent = authUser ? "Đăng xuất" : "Đăng nhập";
+  document.querySelector(".demo-indicator").innerHTML = authUser ? "<i></i> SUPABASE · ONLINE" : "<i></i> BẢN DEMO";
+  document.querySelector(".demo-indicator").classList.toggle("connected", Boolean(authUser));
   document.querySelectorAll("[data-route]").forEach((el) => el.classList.toggle("active", el.dataset.route === route));
   document.querySelector("#current-section").textContent = ROUTES[route];
   document.querySelector(".user-mini-copy span").textContent = `Thành viên · Lv.${state.profile.level}`;
@@ -48,7 +56,80 @@ function render() {
     const rewardNote = view.querySelector(".content-grid > .stack:last-child .panel:last-child p:last-child");
     rewardNote.textContent = `Mỗi cấp nhận ${state.config.skillPointsPerLevel} điểm kỹ năng và ${state.config.bodyPointsPerLevel} điểm cơ thể.`;
   }
+  if (authUser) {
+    view.insertAdjacentHTML("afterbegin", '<div class="admin-warning online-notice">Đang xem hồ sơ Supabase thật. Tập luyện, cửa hàng và đăng ký giải vẫn là demo; thao tác thay đổi dữ liệu đã khóa cho đến khi có API server.</div>');
+    view.querySelectorAll('[data-action="train"], [data-action="body"], [data-action="skill"], [data-action="buy"], [data-action="register"], [data-action="save-config"]').forEach((button) => {
+      button.disabled = true;
+      button.title = "Chức năng online chưa được bật";
+    });
+    document.querySelector('[data-action="reset"]').disabled = true;
+  } else {
+    document.querySelector('[data-action="reset"]').disabled = false;
+  }
   view.focus({ preventScroll: true });
+}
+
+function renderAuthModal(mode) {
+  authMode = mode;
+  const isSignup = mode === "signup";
+  document.querySelector("#modal-root").innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="auth-title"><h2 id="auth-title">${isSignup ? "Tạo tài khoản Courtside" : "Đăng nhập Courtside"}</h2><p>${isSignup ? "Tạo hồ sơ người chơi để lưu tiến trình của bạn." : "Đăng nhập để xem hồ sơ Supabase của bạn."}</p><form id="auth-form" class="auth-form">${isSignup ? '<label>Tên người chơi<input name="username" minlength="3" maxlength="24" autocomplete="nickname" required /></label>' : ""}<label>Email<input name="email" type="email" autocomplete="email" required /></label><label>Mật khẩu<input name="password" type="password" minlength="8" autocomplete="${isSignup ? "new-password" : "current-password"}" required /></label><button class="primary-button" type="submit">${isSignup ? "Tạo tài khoản" : "Đăng nhập"}</button></form><button class="auth-switch" data-action="auth-toggle">${isSignup ? "Đã có tài khoản? Đăng nhập" : "Chưa có tài khoản? Tạo tài khoản"}</button><div class="modal-actions"><button class="secondary-button" data-action="close-modal">Đóng</button></div></section></div>`;
+}
+
+async function loadCloudProfile(user) {
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("id, username, role, reward_points, cash_balance, level, current_exp, unspent_skill_points, unspent_body_points")
+    .eq("id", user.id)
+    .single();
+  if (profileError) {
+    console.error("Could not load player profile", profileError);
+    notify("Đăng nhập được nhưng chưa tải được hồ sơ. Hãy thử tải lại.");
+    return;
+  }
+
+  const { data: character, error: characterError } = await supabase
+    .from("character_stats")
+    .select("stamina, flexibility, agility, fatigue_penalty, last_match_at, skills")
+    .eq("user_id", user.id)
+    .single();
+  if (characterError) {
+    console.error("Could not load character stats", characterError);
+    notify("Không tải được chỉ số nhân vật.");
+    return;
+  }
+
+  authUser = user;
+  state.profile = {
+    ...state.profile,
+    username: profile.username,
+    level: profile.level,
+    exp: profile.current_exp,
+    rewardPoints: profile.reward_points,
+    cashBalance: profile.cash_balance,
+    skillPoints: profile.unspent_skill_points,
+    bodyPoints: profile.unspent_body_points,
+    fatigue: Number(character.fatigue_penalty),
+    lastMatchAt: character.last_match_at ? Date.parse(character.last_match_at) : 0
+  };
+  state.body = { stamina: character.stamina, flexibility: character.flexibility, agility: character.agility };
+  state.skills = { ...DEFAULT_STATE.skills, ...character.skills };
+  document.querySelector("#modal-root").innerHTML = "";
+  render();
+  notify(`Đã đăng nhập: ${profile.username}`);
+}
+
+async function initializeAuth() {
+  supabase.auth.onAuthStateChange((event, session) => {
+    if (session?.user && event === "INITIAL_SESSION") {
+      window.setTimeout(() => loadCloudProfile(session.user), 0);
+    } else if (event === "SIGNED_OUT") {
+      authUser = null;
+      state = loadState();
+      render();
+    }
+  });
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.user) await loadCloudProfile(session.user);
 }
 
 function pageHeading(kicker, title, description, button = "") {
@@ -146,8 +227,17 @@ document.addEventListener("click", (event) => {
   if (routeLink) { location.hash = routeLink.dataset.route; return; }
   const control = event.target.closest("[data-action]");
   if (!control) return;
+  if (control.classList.contains("modal-backdrop") && control !== event.target) return;
   const { action, key } = control.dataset;
-  if (action === "train") {
+  if (action === "auth") {
+    if (authUser) {
+      supabase.auth.signOut().then(({ error }) => {
+        if (error) notify("Không thể đăng xuất. Hãy thử lại.");
+      });
+    } else renderAuthModal("signin");
+  } else if (action === "auth-toggle") {
+    renderAuthModal(authMode === "signin" ? "signup" : "signin");
+  } else if (action === "train") {
     const levels = addExp(35);
     saveState(); render();
     notify(levels ? `Tập luyện hoàn tất · lên ${levels} cấp!` : "Tập luyện hoàn tất · +35 EXP");
@@ -177,5 +267,48 @@ document.addEventListener("click", (event) => {
   } else if (action === "close-modal") document.querySelector("#modal-root").innerHTML = "";
 });
 
+  if (event.target.id !== "auth-form") return;
+  event.preventDefault();
+  const form = event.target;
+  const values = new FormData(form);
+  const email = String(values.get("email")).trim();
+  const password = String(values.get("password"));
+  const submitButton = form.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
+
+  try {
+    if (authMode === "signup") {
+      const username = String(values.get("username")).trim();
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { username },
+          emailRedirectTo: `${location.origin}${location.pathname}`
+        }
+      });
+      if (error) throw error;
+      if (data.session && data.user) await loadCloudProfile(data.user);
+      else document.querySelector("#modal-root").innerHTML = '<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true"><h2>Kiểm tra email</h2><p>Supabase đã gửi thư xác nhận. Mở liên kết trong email để kích hoạt tài khoản, sau đó đăng nhập tại đây.</p><div class="modal-actions"><button class="primary-button" data-action="close-modal">Đã hiểu</button></div></section></div>';
+    } else {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      if (data.user) await loadCloudProfile(data.user);
+    }
+  } catch (error) {
+    const message = error.message?.toLowerCase().includes("invalid login credentials")
+      ? "Email hoặc mật khẩu chưa đúng."
+      : error.message?.toLowerCase().includes("redirect")
+        ? "URL xác nhận chưa được cho phép trong Supabase Auth URL Configuration."
+        : "Không thể xác thực tài khoản. Hãy kiểm tra thông tin và thử lại.";
+    notify(message);
+    submitButton.disabled = false;
+  }
+});
+
 window.addEventListener("hashchange", render);
 render();
+initializeAuth().catch((error) => {
+  console.error("Could not initialize Supabase Auth", error);
+  notify("Không kết nối được Supabase. Tạm thời đang ở chế độ demo.");
+});

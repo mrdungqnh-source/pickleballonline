@@ -17,6 +17,8 @@ The initial database migration is in `supabase/migrations/20261106000100_initial
 
 The browser can read its own profile, character stats, inventory, and ledger. A player may update only their display name and avatar. Client roles, balances, EXP, levels, stats, purchases, registrations, pairings, match results, and rewards are not writable directly; implement those through validated database functions or Supabase Edge Functions before wiring the UI to live data. Never put the Supabase `service_role` key in this repository or frontend.
 
+The frontend uses the public `sb_publishable_...` key in `supabase-config.js`; publishable keys are intended for browser use and are constrained by RLS. Email/password sign-up and sign-in load the player's profile and stats. After login, demo gameplay mutations are disabled until server-side functions are implemented. In Supabase **Authentication > URL Configuration**, set the Site URL and add `https://mrdungqnh-source.github.io/pickleballonline/` to the redirect URLs so confirmation links return to the app.
+
 ## Mechanics represented in the demo
 
 - EXP requirement is `baseExp * level^difficulty`; repeated level-ups grant one skill and one body point each.

@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./styles.css" />
-    <script src="./app.js" defer></script>
+    <script type="module" src="./app.js"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -41,6 +41,7 @@
           <div class="breadcrumb"><span>CLB CẦU LÔNG</span><b>/</b><strong id="current-section">Tổng quan</strong></div>
           <div class="topbar-actions">
             <span class="demo-indicator"><i></i> BẢN DEMO</span>
+            <button id="auth-button" class="auth-button" data-action="auth">Đăng nhập</button>
             <button class="icon-button" aria-label="Thông báo" title="Thông báo">♧<span class="notification-dot"></span></button>
             <button class="help-button" data-action="reset" title="Khôi phục dữ liệu demo">↻ <span>Reset demo</span></button>
           </div>
