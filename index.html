@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#102922" />
+    <meta name="description" content="Pickleball Club, quản lý nhân vật và giải đấu." />
+    <title>Pickleball Club | Player hub</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Điều hướng chính">
+        <a class="brand" href="#home" aria-label="Pickleball Club, trang chủ">
+          <span class="brand-mark" aria-hidden="true"><span></span></span>
+          <span class="brand-copy"><strong>COURTSIDE</strong><small>PICKLEBALL CLUB</small></span>
+        </a>
+        <div class="club-label">PLAYER HUB</div>
+        <nav class="main-nav">
+          <a href="#home" data-route="home" class="nav-link active" aria-label="Tổng quan"><span class="nav-icon">◫</span><span>Tổng quan</span></a>
+          <a href="#training" data-route="training" class="nav-link" aria-label="Tập luyện"><span class="nav-icon">↗</span><span>Tập luyện</span></a>
+          <a href="#tournaments" data-route="tournaments" class="nav-link" aria-label="Giải đấu"><span class="nav-icon">⌘</span><span>Giải đấu</span><span class="nav-count">2</span></a>
+          <a href="#shop" data-route="shop" class="nav-link" aria-label="Cửa hàng"><span class="nav-icon">▧</span><span>Cửa hàng</span></a>
+        </nav>
+        <div class="sidebar-spacer"></div>
+        <div class="sidebar-season"><span class="season-dot"></span><span>SEASON 04 <b>·</b> OPEN PLAY</span></div>
+        <button class="admin-link" data-route="admin"><span class="nav-icon">⚙</span><span>Quản trị</span></button>
+        <div class="user-mini">
+          <div class="avatar avatar-small">MA</div>
+          <div class="user-mini-copy"><strong>Minh Anh</strong><span>Thành viên · Lv.12</span></div>
+          <button class="more-button" aria-label="Tùy chọn tài khoản">···</button>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <header class="topbar">
+          <div class="breadcrumb"><span>CLB CẦU LÔNG</span><b>/</b><strong id="current-section">Tổng quan</strong></div>
+          <div class="topbar-actions">
+            <span class="demo-indicator"><i></i> BẢN DEMO</span>
+            <button class="icon-button" aria-label="Thông báo" title="Thông báo">♧<span class="notification-dot"></span></button>
+            <button class="help-button" data-action="reset" title="Khôi phục dữ liệu demo">↻ <span>Reset demo</span></button>
+          </div>
+        </header>
+        <div id="view" class="view" tabindex="-1"></div>
+        <footer class="app-footer"><span>COURTSIDE CLUB</span><span>Build your game. Play your story.</span></footer>
+      </main>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="modal-root"></div>
+  </body>
+</html>
