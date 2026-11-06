@@ -13,7 +13,7 @@ Static, dependency-free MVP for the pickleball RPG concept. Open `index.html` di
 
 ## Supabase foundation
 
-Run the migrations in order from `supabase/migrations/`: initial schema, secure training RPC, tournament registration RPC, then tournament pairing/results. In Supabase, open **SQL Editor** and run each migration once. They create profile/character, shop/inventory, tournament/bracket, wallet ledger, configuration and training tables; enable RLS; and create a profile plus starter stats for each new Auth user.
+Run the migrations in order from `supabase/migrations/`: initial schema, secure training RPC, tournament registration RPC, tournament pairing/results, then underfilled tournament support. In Supabase, open **SQL Editor** and run each migration once. They create profile/character, shop/inventory, tournament/bracket, wallet ledger, configuration and training tables; enable RLS; and create a profile plus starter stats for each new Auth user.
 
 The browser can read its own profile, character stats, inventory, and ledger. A player may update only their display name and avatar. Client roles, balances, EXP, levels, stats, purchases, registrations, pairings, match results, and rewards are not writable directly; implement those through validated database functions or Supabase Edge Functions before wiring the UI to live data. Never put the Supabase `service_role` key in this repository or frontend.
 
