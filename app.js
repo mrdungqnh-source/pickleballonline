@@ -19,11 +19,12 @@ const ITEMS = [
   { id: "glasses-1", name: "Court Vision", category: "Kính", symbol: "⌑", points: 240, buff: "+1 Backhand" },
   { id: "racket-2", name: "Control Series 02", category: "Vợt", symbol: "◉", points: 700, buff: "+3 Dink · +1 Volley" }
 ];
-const ROUTES = { home: "Tổng quan", training: "Tập luyện", tournaments: "Giải đấu", shop: "Cửa hàng", admin: "Quản trị" };
+const ROUTES = { home: "Tổng quan", training: "Tập luyện", court: "Sân đấu", tournaments: "Giải đấu", shop: "Cửa hàng", admin: "Quản trị" };
 let state = loadState();
 let toastTimer;
 let authUser = null;
 let authMode = "signin";
+let arenaController = null;
 
 function loadState() {
   try {
@@ -43,6 +44,8 @@ function escapeHtml(value) { return String(value).replace(/[&<>"']/g, (char) => 
 
 function render() {
   const route = ROUTES[currentRoute()] ? currentRoute() : "home";
+  arenaController?.destroy();
+  arenaController = null;
   const authButton = document.querySelector("#auth-button");
   authButton.textContent = authUser ? "Đăng xuất" : "Đăng nhập";
   document.querySelector(".demo-indicator").innerHTML = authUser ? "<i></i> SUPABASE · ONLINE" : "<i></i> BẢN DEMO";
@@ -51,13 +54,15 @@ function render() {
   document.querySelector("#current-section").textContent = ROUTES[route];
   document.querySelector(".user-mini-copy span").textContent = `Thành viên · Lv.${state.profile.level}`;
   const view = document.querySelector("#view");
-  view.innerHTML = ({ home: renderHome, training: renderTraining, tournaments: renderTournaments, shop: renderShop, admin: renderAdmin }[route])();
+  view.innerHTML = ({ home: renderHome, training: renderTraining, court: renderCourt, tournaments: renderTournaments, shop: renderShop, admin: renderAdmin }[route])();
+  view.classList.toggle("arena-view", route === "court");
+  if (route === "court") arenaController = createArenaController(view);
   if (route === "training") {
     const rewardNote = view.querySelector(".content-grid > .stack:last-child .panel:last-child p:last-child");
     rewardNote.textContent = `Mỗi cấp nhận ${state.config.skillPointsPerLevel} điểm kỹ năng và ${state.config.bodyPointsPerLevel} điểm cơ thể.`;
   }
   if (authUser) {
-    view.insertAdjacentHTML("afterbegin", '<div class="admin-warning online-notice">Đang xem hồ sơ Supabase thật. Tập luyện đã xử lý phía máy chủ; cửa hàng, phân bổ điểm và đăng ký giải vẫn là demo.</div>');
+    if (route !== "court") view.insertAdjacentHTML("afterbegin", '<div class="admin-warning online-notice">Đang xem hồ sơ Supabase thật. Tập luyện đã xử lý phía máy chủ; cửa hàng, phân bổ điểm và đăng ký giải vẫn là demo.</div>');
     const trainingDescription = view.querySelector(".training-hero p");
     if (trainingDescription) trainingDescription.textContent = "+35 EXP mỗi buổi · tối đa 5 buổi/ngày UTC · lên cấp nhận điểm nâng cấp.";
     view.querySelectorAll('[data-action="body"], [data-action="skill"], [data-action="buy"], [data-action="register"], [data-action="save-config"]').forEach((button) => {
@@ -209,6 +214,503 @@ function renderAdmin() {
       <div class="stack"><section class="panel panel-pad"><div class="panel-heading"><h2>Tình trạng demo</h2></div><div class="point-row" style="margin-top:0"><span>Người chơi cục bộ</span><strong>01</strong></div><div class="point-row"><span>Giải đấu hoạt động</span><strong>02</strong></div><div class="point-row"><span>Vật phẩm cửa hàng</span><strong>${ITEMS.length}</strong></div></section><div class="admin-warning"><strong>Lưu ý bảo mật:</strong> Đây chỉ là bảng cấu hình phía trình duyệt, không có phân quyền quản trị. Bản production phải xác thực role ở server và chỉ cho phép cập nhật qua endpoint quản trị có audit log.</div></div></div>`;
 }
 
+function renderCourt() {
+  return `${pageHeading("COURTSIDE ARENA · COURT 01", "Sân đấu", "Chạy vào vị trí, đọc hướng bóng và chọn cú đánh để kéo dài rally.", '<span class="arena-offline-tag"><i></i> MÔ PHỎNG OFFLINE</span>')}
+    <div class="arena-layout">
+      <div class="arena-main">
+        <div class="arena-scoreboard">
+          <div class="arena-player-score"><span class="arena-player-dot"></span><div><small>PLAYER 01</small><strong>MINH ANH</strong></div><b id="arena-player-score">0</b></div>
+          <div class="arena-match-state"><span id="arena-match-label">PRACTICE SESSION</span><strong id="arena-status">SẴN SÀNG RA SÂN</strong><small id="arena-rally">RALLY 00 · BEST 00</small></div>
+          <div class="arena-player-score opponent"><b id="arena-opponent-score">0</b><div><small>PLAYER 02</small><strong>ACE BOT</strong></div><span class="arena-opponent-dot"></span></div>
+        </div>
+        <div class="arena-court-frame">
+          <canvas id="pickleball-court" width="1200" height="660" aria-label="Sân pickleball với nhân vật hoạt hình và bóng đang di chuyển"></canvas>
+          <div class="arena-live"><i></i><span id="arena-live-label">COURT CAM 01</span><span>● 60 FPS</span></div>
+          <div class="arena-start-overlay" id="arena-overlay"><div class="arena-start-mark">01</div><div class="eyebrow">PICKLEBALL SIMULATOR</div><h2 id="arena-overlay-title">Sẵn sàng chưa?</h2><p id="arena-overlay-copy">Chọn chế độ rồi bước vào sân. Điều khiển nhân vật bằng WASD hoặc phím mũi tên.</p><button class="primary-button" data-action="arena-start">▶ Bắt đầu trận</button></div>
+        </div>
+        <div class="arena-toolbar">
+          <div class="arena-segment" role="group" aria-label="Chế độ chơi"><button class="arena-mode active" data-action="arena-mode" data-key="practice">Luyện tập</button><button class="arena-mode" data-action="arena-mode" data-key="match">Đấu thử · 5 điểm</button></div>
+          <div class="arena-shot-picker" role="group" aria-label="Chọn cú đánh"><button class="arena-shot active" data-action="arena-shot" data-key="drive"><span>↗</span> Drive</button><button class="arena-shot" data-action="arena-shot" data-key="drop"><span>⌄</span> Drop</button><button class="arena-shot" data-action="arena-shot" data-key="dink"><span>⌁</span> Dink</button></div>
+          <button class="arena-reset" data-action="arena-reset" aria-label="Đặt lại trận">↻ <span>Đặt lại</span></button>
+        </div>
+        <div class="arena-touchbar">
+          <div class="arena-dpad" aria-label="Di chuyển nhân vật"><button data-action="arena-move" data-key="up" aria-label="Chạy lên">↑</button><button data-action="arena-move" data-key="left" aria-label="Chạy trái">←</button><button data-action="arena-move" data-key="down" aria-label="Chạy xuống">↓</button><button data-action="arena-move" data-key="right" aria-label="Chạy phải">→</button></div>
+          <span class="arena-key-hint">WASD / ↑ ↓ ← → <b>·</b> SPACE để đánh</span>
+          <button class="arena-hit-button" data-action="arena-hit"><span>↗</span> Đánh bóng <small>SPACE</small></button>
+        </div>
+      </div>
+      <aside class="arena-rail">
+        <div class="arena-rail-heading"><div class="eyebrow">MATCH ANALYTICS</div><span class="arena-dot-live"></span></div>
+        <div class="arena-stat-row"><span>Rally hiện tại</span><strong id="arena-stat-rally">00</strong></div>
+        <div class="arena-stat-row"><span>Cú đánh chính xác</span><strong id="arena-stat-hits">00</strong></div>
+        <div class="arena-stat-row"><span>Best rally</span><strong id="arena-stat-best">00 <small>hits</small></strong></div>
+        <div class="arena-energy"><div><span>PHONG ĐỘ</span><strong id="arena-energy-label">100%</strong></div><div class="arena-energy-track"><i id="arena-energy-bar"></i></div><small>Chỉ số mô phỏng · không trừ stamina hồ sơ</small></div>
+        <div class="arena-rail-note"><span>✦</span><div><strong>Đọc bóng, chọn thời điểm</strong><p>ACE BOT trả bóng về ngẫu nhiên. Chạy vào bóng trước khi bấm đánh để giữ rally.</p></div></div>
+        <div class="arena-simulation-note">ĐẤU THỬ KHÔNG GHI ĐIỂM XẾP HẠNG<br/>Kết quả không ảnh hưởng hồ sơ online.</div>
+      </aside>
+    </div>`;
+}
+
+function createArenaController(view) {
+  const canvas = view.querySelector("#pickleball-court");
+  const context = canvas?.getContext("2d");
+  if (!canvas || !context) return null;
+
+  const width = 1200;
+  const height = 660;
+  const keys = new Set();
+  const refs = {
+    overlay: view.querySelector("#arena-overlay"),
+    overlayTitle: view.querySelector("#arena-overlay-title"),
+    overlayCopy: view.querySelector("#arena-overlay-copy"),
+    status: view.querySelector("#arena-status"),
+    modeLabel: view.querySelector("#arena-match-label"),
+    playerScore: view.querySelector("#arena-player-score"),
+    opponentScore: view.querySelector("#arena-opponent-score"),
+    rally: view.querySelector("#arena-rally"),
+    rallyStat: view.querySelector("#arena-stat-rally"),
+    hits: view.querySelector("#arena-stat-hits"),
+    best: view.querySelector("#arena-stat-best"),
+    energy: view.querySelector("#arena-energy-label"),
+    energyBar: view.querySelector("#arena-energy-bar"),
+    liveLabel: view.querySelector("#arena-live-label")
+  };
+  const arena = {
+    mode: "practice",
+    running: false,
+    score: { player: 0, opponent: 0 },
+    rally: 0,
+    hits: 0,
+    best: 0,
+    fatigue: 0,
+    shot: "drive",
+    player: { x: 880, y: 330, targetX: 880, targetY: 330 },
+    opponent: { x: 320, y: 330, targetX: 320, targetY: 330 },
+    ball: null,
+    serveAt: 0,
+    raf: 0,
+    lastFrame: performance.now(),
+    destroyed: false
+  };
+
+  function setStatus(message) { refs.status.textContent = message; }
+  function updateStats() {
+    refs.playerScore.textContent = arena.score.player;
+    refs.opponentScore.textContent = arena.score.opponent;
+    refs.rally.textContent = `RALLY ${String(arena.rally).padStart(2, "0")} · BEST ${String(arena.best).padStart(2, "0")}`;
+    refs.rallyStat.textContent = String(arena.rally).padStart(2, "0");
+    refs.hits.textContent = String(arena.hits).padStart(2, "0");
+    refs.best.innerHTML = `${String(arena.best).padStart(2, "0")} <small>hits</small>`;
+    const energy = Math.max(42, 100 - arena.fatigue);
+    refs.energy.textContent = `${energy}%`;
+    refs.energyBar.style.width = `${energy}%`;
+    refs.modeLabel.textContent = arena.mode === "practice" ? "PRACTICE SESSION" : "ARCADE MATCH · FIRST TO 5";
+    refs.liveLabel.textContent = arena.running ? "RALLY IN PLAY" : "COURT CAM 01";
+  }
+
+  function roundRect(x, y, w, h, radius) {
+    context.beginPath();
+    context.roundRect(x, y, w, h, radius);
+  }
+
+  function drawCourt(now) {
+    const sky = context.createLinearGradient(0, 0, 0, height);
+    sky.addColorStop(0, "#0b211b");
+    sky.addColorStop(0.48, "#17372c");
+    sky.addColorStop(1, "#0a1c17");
+    context.fillStyle = sky;
+    context.fillRect(0, 0, width, height);
+
+    for (let row = 0; row < 3; row += 1) {
+      const y = 24 + row * 22;
+      for (let col = 0; col < 54; col += 1) {
+        const x = 20 + col * 22 + (row % 2) * 9;
+        const pulse = (Math.sin(now * 0.0015 + col * 0.47 + row) + 1) * 0.5;
+        context.fillStyle = pulse > 0.91 ? "rgba(215,243,106,.76)" : `rgba(188,214,199,${0.17 + pulse * 0.22})`;
+        context.beginPath(); context.arc(x, y, 2.2, 0, Math.PI * 2); context.fill();
+      }
+    }
+
+    const glow = context.createRadialGradient(600, 330, 40, 600, 330, 580);
+    glow.addColorStop(0, "rgba(86,190,135,.19)");
+    glow.addColorStop(1, "rgba(86,190,135,0)");
+    context.fillStyle = glow;
+    context.fillRect(0, 70, width, 560);
+
+    context.save();
+    context.shadowColor = "rgba(0,0,0,.4)";
+    context.shadowBlur = 28;
+    context.shadowOffsetY = 16;
+    roundRect(108, 91, 984, 486, 8);
+    context.fillStyle = "#123d31";
+    context.fill();
+    context.restore();
+
+    const court = context.createLinearGradient(110, 110, 1080, 560);
+    court.addColorStop(0, "#31977a");
+    court.addColorStop(0.5, "#247b68");
+    court.addColorStop(1, "#226d5b");
+    roundRect(128, 108, 944, 454, 4);
+    context.fillStyle = court;
+    context.fill();
+
+    context.save();
+    context.globalAlpha = 0.13;
+    for (let x = 145; x < 1070; x += 38) {
+      context.fillStyle = x % 2 ? "#d8f39d" : "#0b4338";
+      context.fillRect(x, 109, 19, 452);
+    }
+    context.restore();
+
+    context.strokeStyle = "rgba(246,255,242,.88)";
+    context.lineWidth = 3;
+    context.lineCap = "round";
+    context.strokeRect(151, 129, 898, 412);
+    context.beginPath();
+    context.moveTo(600, 129); context.lineTo(600, 541);
+    context.moveTo(424, 129); context.lineTo(424, 541);
+    context.moveTo(776, 129); context.lineTo(776, 541);
+    context.moveTo(151, 335); context.lineTo(424, 335);
+    context.moveTo(776, 335); context.lineTo(1049, 335);
+    context.stroke();
+
+    context.strokeStyle = "rgba(228,247,218,.75)";
+    context.lineWidth = 2;
+    context.beginPath(); context.moveTo(600, 126); context.lineTo(600, 545); context.stroke();
+    context.fillStyle = "#d7f36a";
+    context.fillRect(594, 123, 12, 12); context.fillRect(594, 538, 12, 12);
+    context.setLineDash([6, 8]);
+    context.strokeStyle = "rgba(12,44,35,.6)";
+    context.lineWidth = 2;
+    context.beginPath(); context.moveTo(600, 135); context.lineTo(600, 536); context.stroke();
+    context.setLineDash([]);
+
+    context.font = "700 10px 'DM Sans', sans-serif";
+    context.fillStyle = "rgba(239,255,232,.62)";
+    context.fillText("KITCHEN", 454, 157);
+    context.fillText("KITCHEN", 684, 157);
+    context.save();
+    context.translate(454, 524); context.rotate(Math.PI);
+    context.fillText("NO VOLLEY ZONE", 0, 0);
+    context.restore();
+    context.save();
+    context.translate(684, 524); context.rotate(Math.PI);
+    context.fillText("NO VOLLEY ZONE", 0, 0);
+    context.restore();
+
+    context.fillStyle = "rgba(8,28,21,.78)";
+    roundRect(430, 42, 340, 35, 17); context.fill();
+    context.fillStyle = "#d8f36e";
+    context.font = "700 10px 'DM Sans', sans-serif";
+    context.textAlign = "center";
+    context.fillText("COURTSIDE CLUB  ·  PICKLEBALL OPEN", 600, 64);
+    context.textAlign = "start";
+  }
+
+  function drawCharacter(x, y, type, now, moving, facing) {
+    const phase = now * (moving ? 0.018 : 0.003);
+    const stride = moving ? Math.sin(phase) * 14 : Math.sin(phase) * 2;
+    const bob = moving ? Math.abs(Math.cos(phase)) * 4 : Math.sin(phase) * 1.5;
+    const isPlayer = type === "player";
+    const shirt = isPlayer ? "#ff9558" : "#d8f36e";
+    const hair = isPlayer ? "#3c2520" : "#202c39";
+    const skin = isPlayer ? "#f3c79c" : "#d89d78";
+
+    context.save();
+    context.translate(x, y + bob);
+    context.scale(facing, 1);
+    context.fillStyle = "rgba(5,25,18,.34)";
+    context.beginPath(); context.ellipse(0, 25, 30, 11, 0, 0, Math.PI * 2); context.fill();
+
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.strokeStyle = "#253e39";
+    context.lineWidth = 12;
+    context.beginPath();
+    context.moveTo(-7, 9); context.lineTo(-11 + stride, 24);
+    context.moveTo(7, 9); context.lineTo(11 - stride, 24);
+    context.stroke();
+    context.strokeStyle = isPlayer ? "#f9f4e7" : "#deecdf";
+    context.lineWidth = 7;
+    context.beginPath();
+    context.moveTo(-14 + stride, 24); context.lineTo(-4 + stride, 24);
+    context.moveTo(8 - stride, 24); context.lineTo(18 - stride, 24);
+    context.stroke();
+
+    context.fillStyle = shirt;
+    roundRect(-18, -21, 36, 37, 13); context.fill();
+    context.fillStyle = "rgba(255,255,255,.82)";
+    roundRect(-4, -18, 8, 24, 4); context.fill();
+
+    context.strokeStyle = skin;
+    context.lineWidth = 8;
+    context.beginPath();
+    context.moveTo(-15, -13); context.lineTo(-25 - stride * 0.4, -1);
+    context.moveTo(15, -13); context.lineTo(24 + stride * 0.4, -4);
+    context.stroke();
+    context.fillStyle = skin;
+    context.beginPath(); context.arc(24 + stride * 0.4, -4, 5, 0, Math.PI * 2); context.fill();
+
+    context.fillStyle = skin;
+    context.beginPath(); context.ellipse(0, -34, 20, 21, 0, 0, Math.PI * 2); context.fill();
+    context.fillStyle = hair;
+    context.beginPath();
+    context.moveTo(-19, -35); context.quadraticCurveTo(-22, -58, -3, -58);
+    context.quadraticCurveTo(16, -61, 20, -42); context.quadraticCurveTo(8, -49, -2, -44);
+    context.quadraticCurveTo(-10, -38, -19, -35); context.fill();
+    context.fillStyle = "#24322d";
+    context.beginPath(); context.arc(-7, -34, 2, 0, Math.PI * 2); context.arc(7, -34, 2, 0, Math.PI * 2); context.fill();
+    context.strokeStyle = "#a65d4b";
+    context.lineWidth = 1.8;
+    context.beginPath(); context.arc(0, -29, 5, 0.1, Math.PI - 0.1); context.stroke();
+
+    context.save();
+    context.translate(29, -7);
+    context.rotate(-0.4 + Math.sin(phase) * 0.08);
+    context.strokeStyle = "#e8ebd1"; context.lineWidth = 4;
+    context.beginPath(); context.moveTo(0, 0); context.lineTo(12, -9); context.stroke();
+    context.fillStyle = isPlayer ? "#eaf0d0" : "#d6edca";
+    context.strokeStyle = isPlayer ? "#ffb17a" : "#b3d683";
+    context.lineWidth = 3;
+    context.beginPath(); context.ellipse(20, -16, 10, 15, 0.35, 0, Math.PI * 2); context.fill(); context.stroke();
+    context.restore();
+
+    context.fillStyle = "rgba(255,255,255,.9)";
+    context.font = "700 9px 'DM Sans', sans-serif";
+    context.textAlign = "center";
+    context.fillText(isPlayer ? "MINH ANH" : "ACE BOT", 0, 48);
+    context.restore();
+  }
+
+  function drawBall(now) {
+    if (!arena.ball) return;
+    const ball = arena.ball;
+    let x = ball.x;
+    let y = ball.y;
+    let heightOffset = 0;
+    if (ball.phase === "flight") {
+      const progress = Math.min(1, (now - ball.started) / ball.duration);
+      x = ball.fromX + (ball.toX - ball.fromX) * progress;
+      y = ball.fromY + (ball.toY - ball.fromY) * progress;
+      heightOffset = Math.sin(progress * Math.PI) * (arena.shot === "drop" ? 32 : 76);
+      ball.x = x; ball.y = y;
+      ball.trail.push({ x, y: y - heightOffset });
+      if (ball.trail.length > 7) ball.trail.shift();
+    }
+
+    ball.trail.forEach((point, index) => {
+      context.fillStyle = `rgba(226,255,121,${0.05 + index * 0.035})`;
+      context.beginPath(); context.arc(point.x, point.y, 3 + index * 0.45, 0, Math.PI * 2); context.fill();
+    });
+    context.fillStyle = "rgba(5,22,14,.32)";
+    context.beginPath(); context.ellipse(x, y + 3, 10, 4, 0, 0, Math.PI * 2); context.fill();
+    context.shadowColor = "#dfff78"; context.shadowBlur = 18;
+    context.fillStyle = "#e4ff79";
+    context.beginPath(); context.arc(x, y - heightOffset, 7, 0, Math.PI * 2); context.fill();
+    context.shadowBlur = 0;
+    context.strokeStyle = "rgba(47,93,50,.8)"; context.lineWidth = 1;
+    context.beginPath(); context.arc(x, y - heightOffset, 4, -0.5, 1.5); context.stroke();
+  }
+
+  function draw(now) {
+    context.clearRect(0, 0, width, height);
+    drawCourt(now);
+    const ballTarget = arena.ball?.phase === "flight" ? arena.ball.recipient : null;
+    const playerMoving = Math.abs(arena.player.x - arena.player.targetX) + Math.abs(arena.player.y - arena.player.targetY) > 4;
+    const opponentMoving = Math.abs(arena.opponent.x - arena.opponent.targetX) + Math.abs(arena.opponent.y - arena.opponent.targetY) > 4;
+    if (ballTarget === "player" || arena.ball?.recipient === "player") {
+      context.strokeStyle = "rgba(255,236,117,.5)"; context.lineWidth = 2; context.setLineDash([5, 8]);
+      context.beginPath(); context.arc(arena.ball.toX, arena.ball.toY, 34 + Math.sin(now * 0.01) * 5, 0, Math.PI * 2); context.stroke(); context.setLineDash([]);
+    }
+    drawCharacter(arena.opponent.x, arena.opponent.y, "opponent", now, opponentMoving, 1);
+    drawCharacter(arena.player.x, arena.player.y, "player", now, playerMoving, -1);
+    drawBall(now);
+  }
+
+  function launchBall(from, to, recipient, duration) {
+    arena.ball = { fromX: from.x, fromY: from.y, toX: to.x, toY: to.y, x: from.x, y: from.y, recipient, started: performance.now(), duration, phase: "flight", trail: [] };
+    if (recipient === "player") { arena.player.targetX = to.x; arena.player.targetY = to.y; }
+    else { arena.opponent.targetX = to.x; arena.opponent.targetY = to.y; }
+  }
+
+  function updateScoreLabels() {
+    updateStats();
+  }
+
+  function showResult(winner) {
+    arena.running = false;
+    arena.ball = null;
+    refs.overlayTitle.textContent = winner === "player" ? "Bạn thắng rally!" : "ACE BOT ghi điểm";
+    refs.overlayCopy.textContent = arena.mode === "match" ? "Trận đấu mô phỏng · kết quả không ghi vào hồ sơ online." : `Rally tốt nhất: ${arena.best} cú đánh. Tiếp tục luyện để phá kỷ lục của mình.`;
+    refs.overlay.querySelector(".primary-button").textContent = "▶ Chơi tiếp";
+    refs.overlay.classList.remove("hidden");
+    setStatus(winner === "player" ? "POINT · MINH ANH" : "POINT · ACE BOT");
+  }
+
+  function awardPoint(winner) {
+    arena.ball = null;
+    arena.fatigue = Math.min(58, arena.fatigue + 5);
+    if (winner === "player") arena.score.player += 1;
+    else arena.score.opponent += 1;
+    arena.rally = 0;
+    updateScoreLabels();
+    if (arena.mode === "match" && (arena.score.player >= 5 || arena.score.opponent >= 5)) {
+      showResult(arena.score.player > arena.score.opponent ? "player" : "opponent");
+      return;
+    }
+    setStatus(winner === "player" ? "ĐIỂM CỦA BẠN" : "ĐỐI THỦ GHI ĐIỂM");
+    arena.serveAt = performance.now() + 850;
+  }
+
+  function hitBall() {
+    if (!arena.running || !arena.ball || arena.ball.phase !== "waiting" || arena.ball.recipient !== "player") {
+      setStatus(arena.running ? "CHỜ BÓNG ĐẾN VÙNG ĐÁNH" : "BẤM BẮT ĐẦU ĐỂ VÀO SÂN");
+      return;
+    }
+    const distance = Math.hypot(arena.player.x - arena.ball.toX, arena.player.y - arena.ball.toY);
+    if (distance > 95) {
+      setStatus("CHẠY VÀO VỊ TRÍ BÓNG!");
+      return;
+    }
+    arena.hits += 1;
+    arena.rally += 1;
+    arena.best = Math.max(arena.best, arena.rally);
+    arena.fatigue = Math.min(58, arena.fatigue + 1);
+    updateScoreLabels();
+    setStatus(`${arena.shot.toUpperCase()} · RALLY ${arena.rally}`);
+    const target = { x: 230 + Math.random() * 280, y: 180 + Math.random() * 300 };
+    const duration = arena.shot === "drive" ? 760 : arena.shot === "drop" ? 1140 : 980;
+    launchBall({ x: arena.player.x, y: arena.player.y - 7 }, target, "opponent", duration);
+  }
+
+  function move(direction) {
+    const step = 76;
+    if (direction === "up") arena.player.targetY -= step;
+    if (direction === "down") arena.player.targetY += step;
+    if (direction === "left") arena.player.targetX -= step;
+    if (direction === "right") arena.player.targetX += step;
+    arena.player.targetX = Math.max(655, Math.min(1015, arena.player.targetX));
+    arena.player.targetY = Math.max(170, Math.min(500, arena.player.targetY));
+  }
+
+  function reset() {
+    arena.running = false;
+    arena.score = { player: 0, opponent: 0 };
+    arena.rally = 0; arena.hits = 0; arena.best = 0; arena.fatigue = 0;
+    arena.ball = null; arena.serveAt = 0;
+    arena.player = { x: 880, y: 330, targetX: 880, targetY: 330 };
+    arena.opponent = { x: 320, y: 330, targetX: 320, targetY: 330 };
+    refs.overlayTitle.textContent = "Sẵn sàng chưa?";
+    refs.overlayCopy.textContent = "Chọn chế độ rồi bước vào sân. Điều khiển nhân vật bằng WASD hoặc phím mũi tên.";
+    refs.overlay.querySelector(".primary-button").textContent = "▶ Bắt đầu trận";
+    refs.overlay.classList.remove("hidden");
+    setStatus("SẴN SÀNG RA SÂN");
+    updateScoreLabels();
+  }
+
+  function start() {
+    arena.running = true;
+    refs.overlay.classList.add("hidden");
+    setStatus("GIAO BÓNG · CHUẨN BỊ");
+    arena.serveAt = performance.now() + 450;
+  }
+
+  function setMode(mode) {
+    arena.mode = mode;
+    view.querySelectorAll(".arena-mode").forEach((button) => button.classList.toggle("active", button.dataset.key === mode));
+    reset();
+    refs.overlayCopy.textContent = mode === "practice" ? "Rèn timing và giữ bóng trong sân. Chế độ này không giới hạn điểm." : "Đấu thử đến 5 điểm cùng ACE BOT. Kết quả không ghi vào hồ sơ online.";
+    updateStats();
+  }
+
+  function onKeyDown(event) {
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(event.key)) event.preventDefault();
+    if (event.key === " " || event.key === "Enter") { hitBall(); return; }
+    const key = event.key.toLowerCase();
+    if (["arrowup", "w"].includes(key)) keys.add("up");
+    if (["arrowdown", "s"].includes(key)) keys.add("down");
+    if (["arrowleft", "a"].includes(key)) keys.add("left");
+    if (["arrowright", "d"].includes(key)) keys.add("right");
+  }
+  function onKeyUp(event) {
+    const key = event.key.toLowerCase();
+    if (["arrowup", "w"].includes(key)) keys.delete("up");
+    if (["arrowdown", "s"].includes(key)) keys.delete("down");
+    if (["arrowleft", "a"].includes(key)) keys.delete("left");
+    if (["arrowright", "d"].includes(key)) keys.delete("right");
+  }
+
+  function tick(now) {
+    if (arena.destroyed) return;
+    const delta = Math.min(0.04, (now - arena.lastFrame) / 1000);
+    arena.lastFrame = now;
+    const moveX = (keys.has("right") ? 1 : 0) - (keys.has("left") ? 1 : 0);
+    const moveY = (keys.has("down") ? 1 : 0) - (keys.has("up") ? 1 : 0);
+    arena.player.targetX += moveX * 360 * delta;
+    arena.player.targetY += moveY * 360 * delta;
+    arena.player.targetX = Math.max(655, Math.min(1015, arena.player.targetX));
+    arena.player.targetY = Math.max(170, Math.min(500, arena.player.targetY));
+    for (const player of [arena.player, arena.opponent]) {
+      player.x += Math.max(-540 * delta, Math.min(540 * delta, player.targetX - player.x));
+      player.y += Math.max(-540 * delta, Math.min(540 * delta, player.targetY - player.y));
+    }
+
+    if (arena.running && arena.serveAt && now >= arena.serveAt && !arena.ball) {
+      arena.serveAt = 0;
+      const target = { x: 790 + Math.random() * 205, y: 190 + Math.random() * 290 };
+      launchBall({ x: arena.opponent.x, y: arena.opponent.y - 6 }, target, "player", 900 + Math.random() * 280);
+      setStatus("BÓNG ĐANG TỚI · CHẠY ĐÓN BÓNG");
+    }
+
+    if (arena.ball?.phase === "flight" && now - arena.ball.started >= arena.ball.duration) {
+      arena.ball.phase = "waiting";
+      arena.ball.arrived = now;
+      if (arena.ball.recipient === "player") {
+        arena.player.targetX = arena.ball.toX; arena.player.targetY = arena.ball.toY;
+        setStatus("BÓNG TRONG TẦM · ĐÁNH NGAY!");
+      } else {
+        arena.opponent.targetX = arena.ball.toX; arena.opponent.targetY = arena.ball.toY;
+      }
+    } else if (arena.ball?.phase === "waiting" && arena.ball.recipient === "player" && now - arena.ball.arrived > 1650) {
+      awardPoint("opponent");
+    } else if (arena.ball?.phase === "waiting" && arena.ball.recipient === "opponent" && now - arena.ball.arrived > 620) {
+      if (Math.random() < 0.2) awardPoint("player");
+      else {
+        const target = { x: 680 + Math.random() * 300, y: 180 + Math.random() * 300 };
+        launchBall({ x: arena.opponent.x, y: arena.opponent.y - 6 }, target, "player", 880 + Math.random() * 320);
+        setStatus("ACE BOT TRẢ BÓNG · CHẠY!");
+      }
+    }
+
+    draw(now);
+    arena.raf = requestAnimationFrame(tick);
+  }
+
+  document.addEventListener("keydown", onKeyDown);
+  document.addEventListener("keyup", onKeyUp);
+  updateStats();
+  arena.raf = requestAnimationFrame(tick);
+
+  return {
+    handle(action, key) {
+      if (action === "arena-start") start();
+      else if (action === "arena-reset") reset();
+      else if (action === "arena-mode") setMode(key);
+      else if (action === "arena-shot") {
+        arena.shot = key;
+        view.querySelectorAll(".arena-shot").forEach((button) => button.classList.toggle("active", button.dataset.key === key));
+      } else if (action === "arena-hit") hitBall();
+      else if (action === "arena-move") move(key);
+    },
+    destroy() {
+      arena.destroyed = true;
+      cancelAnimationFrame(arena.raf);
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keyup", onKeyUp);
+    }
+  };
+}
+
 function notify(message) {
   const toast = document.querySelector("#toast");
   toast.textContent = message;
@@ -262,6 +764,8 @@ document.addEventListener("click", (event) => {
     } else renderAuthModal("signin");
   } else if (action === "auth-toggle") {
     renderAuthModal(authMode === "signin" ? "signup" : "signin");
+  } else if (action.startsWith("arena-")) {
+    arenaController?.handle(action, key);
   } else if (action === "train") {
     if (authUser) {
       void completeOnlineTraining(control);
