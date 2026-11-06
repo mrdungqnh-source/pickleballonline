@@ -13,7 +13,7 @@ Static, dependency-free MVP for the pickleball RPG concept. Open `index.html` di
 
 ## Supabase foundation
 
-Run the migrations in order from `supabase/migrations/`: initial schema, secure training RPC, tournament registration RPC, tournament pairing/results, then underfilled tournament support. In Supabase, open **SQL Editor** and run each migration once. They create profile/character, shop/inventory, tournament/bracket, wallet ledger, configuration and training tables; enable RLS; and create a profile plus starter stats for each new Auth user.
+Run the migrations in order from `supabase/migrations/`: initial schema, secure training RPC, tournament registration RPC, tournament pairing/results, underfilled tournament support, then the final-round resolver fix. In Supabase, open **SQL Editor** and run each migration once. They create profile/character, shop/inventory, tournament/bracket, wallet ledger, configuration and training tables; enable RLS; and create a profile plus starter stats for each new Auth user.
 
 The browser can read its own profile, character stats, inventory, and ledger. A player may update only their display name and avatar. Client roles, balances, EXP, levels, stats, purchases, registrations, pairings, match results, and rewards are not writable directly; implement those through validated database functions or Supabase Edge Functions before wiring the UI to live data. Never put the Supabase `service_role` key in this repository or frontend.
 
@@ -24,6 +24,8 @@ Online training is implemented by `supabase/migrations/20261106000200_secure_tra
 Tournament registration is implemented by `supabase/migrations/20261106000300_tournament_registration.sql`. It seeds two open random-pair tournaments and exposes `register_for_tournament()` to authenticated users only. The function checks the player's level and locks the tournament while checking capacity. Once 64 players have registered, the next migration pairs players randomly, builds the bracket, and exposes a participant-only resolver that computes combat power, fatigue, advancement, and champion/runner-up rewards server-side. The client cannot submit a winner or score.
 
 `supabase/migrations/20261106000500_underfilled_tournaments.sql` lets an admin start an open random tournament with any even number of at least four registered players. The bracket is padded to the next power of two and missing slots become byes. Odd player counts wait for another registration; admins can start from the tournament page.
+
+`supabase/migrations/20261106000600_fix_tournament_final_round.sql` makes match resolution use the bracket's stored round count, including underfilled brackets, so finalists correctly complete the tournament and trigger rewards.
 
 ## Mechanics represented in the demo
 
