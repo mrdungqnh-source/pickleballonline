@@ -1,4 +1,4 @@
-import { supabaseClient } from "./supabase-client.js";
+import { supabaseClient } from "./supabase-client.js?v=2";
 
 const STORAGE_KEY = "courtside-demo-v1";
 const DEFAULT_CONFIG = { baseExp: 100, difficulty: 1.5, matchFatigue: 0.3, recoveryHours: 4, advancedLevel: 40, skillPointsPerLevel: 1, bodyPointsPerLevel: 1 };
