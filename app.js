@@ -1,5 +1,4 @@
-import { supabase } from "./supabase-client.js";
-
+const supabase = window.courtsideSupabase;
 const STORAGE_KEY = "courtside-demo-v1";
 const DEFAULT_CONFIG = { baseExp: 100, difficulty: 1.5, matchFatigue: 0.3, recoveryHours: 4, advancedLevel: 40, skillPointsPerLevel: 1, bodyPointsPerLevel: 1 };
 const DEFAULT_STATE = {
@@ -119,6 +118,7 @@ async function loadCloudProfile(user) {
 }
 
 async function initializeAuth() {
+  if (!supabase) return;
   supabase.auth.onAuthStateChange((event, session) => {
     if (session?.user && event === "INITIAL_SESSION") {
       window.setTimeout(() => loadCloudProfile(session.user), 0);
@@ -230,6 +230,7 @@ document.addEventListener("click", (event) => {
   if (control.classList.contains("modal-backdrop") && control !== event.target) return;
   const { action, key } = control.dataset;
   if (action === "auth") {
+    if (!supabase) return notify("Không tải được Supabase SDK. Hãy tải lại trang.");
     if (authUser) {
       supabase.auth.signOut().then(({ error }) => {
         if (error) notify("Không thể đăng xuất. Hãy thử lại.");
