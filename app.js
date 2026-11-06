@@ -57,8 +57,10 @@ function render() {
     rewardNote.textContent = `Mỗi cấp nhận ${state.config.skillPointsPerLevel} điểm kỹ năng và ${state.config.bodyPointsPerLevel} điểm cơ thể.`;
   }
   if (authUser) {
-    view.insertAdjacentHTML("afterbegin", '<div class="admin-warning online-notice">Đang xem hồ sơ Supabase thật. Tập luyện, cửa hàng và đăng ký giải vẫn là demo; thao tác thay đổi dữ liệu đã khóa cho đến khi có API server.</div>');
-    view.querySelectorAll('[data-action="train"], [data-action="body"], [data-action="skill"], [data-action="buy"], [data-action="register"], [data-action="save-config"]').forEach((button) => {
+    view.insertAdjacentHTML("afterbegin", '<div class="admin-warning online-notice">Đang xem hồ sơ Supabase thật. Tập luyện đã xử lý phía máy chủ; cửa hàng, phân bổ điểm và đăng ký giải vẫn là demo.</div>');
+    const trainingDescription = view.querySelector(".training-hero p");
+    if (trainingDescription) trainingDescription.textContent = "+35 EXP mỗi buổi · tối đa 5 buổi/ngày UTC · lên cấp nhận điểm nâng cấp.";
+    view.querySelectorAll('[data-action="body"], [data-action="skill"], [data-action="buy"], [data-action="register"], [data-action="save-config"]').forEach((button) => {
       button.disabled = true;
       button.title = "Chức năng online chưa được bật";
     });
@@ -130,6 +132,29 @@ async function initializeAuth() {
   });
   const { data: { session } } = await supabaseClient.auth.getSession();
   if (session?.user) await loadCloudProfile(session.user);
+}
+
+async function completeOnlineTraining(button) {
+  button.disabled = true;
+  try {
+    const { data, error } = await supabaseClient.rpc("complete_training");
+    if (error) throw error;
+
+    state.profile.level = data.level;
+    state.profile.exp = data.current_exp;
+    state.profile.skillPoints = data.unspent_skill_points;
+    state.profile.bodyPoints = data.unspent_body_points;
+    render();
+    notify(data.levels_gained > 0
+      ? `+${data.exp_awarded} EXP · lên ${data.levels_gained} cấp!`
+      : `Tập luyện hoàn tất · +${data.exp_awarded} EXP (${data.sessions_today}/${data.daily_limit} buổi hôm nay)`);
+  } catch (error) {
+    button.disabled = false;
+    notify(error.message?.includes("Daily training limit reached")
+      ? "Bạn đã đạt giới hạn tập luyện hôm nay."
+      : "Chưa thể hoàn tất buổi tập. Hãy tải lại và thử lại.");
+    console.error("Online training failed", error);
+  }
 }
 
 function pageHeading(kicker, title, description, button = "") {
@@ -238,6 +263,10 @@ document.addEventListener("click", (event) => {
   } else if (action === "auth-toggle") {
     renderAuthModal(authMode === "signin" ? "signup" : "signin");
   } else if (action === "train") {
+    if (authUser) {
+      void completeOnlineTraining(control);
+      return;
+    }
     const levels = addExp(35);
     saveState(); render();
     notify(levels ? `Tập luyện hoàn tất · lên ${levels} cấp!` : "Tập luyện hoàn tất · +35 EXP");

@@ -19,6 +19,8 @@ The browser can read its own profile, character stats, inventory, and ledger. A 
 
 The frontend uses the public `sb_publishable_...` key in `supabase-config.js`; publishable keys are intended for browser use and are constrained by RLS. Email/password sign-up and sign-in load the player's profile and stats. After login, demo gameplay mutations are disabled until server-side functions are implemented. In Supabase **Authentication > URL Configuration**, set the Site URL and add `https://mrdungqnh-source.github.io/pickleballonline/` to the redirect URLs so confirmation links return to the app.
 
+Online training is implemented by `supabase/migrations/20261106000200_secure_training_rpc.sql`. Run it after the initial schema migration. The `complete_training()` RPC derives the player from `auth.uid()`, awards configured EXP, applies level-ups atomically, and limits training to five sessions per UTC day. The browser never supplies a reward amount or player ID. Other gameplay mutations remain disabled online until their own trusted RPCs are added.
+
 ## Mechanics represented in the demo
 
 - EXP requirement is `baseExp * level^difficulty`; repeated level-ups grant one skill and one body point each.
