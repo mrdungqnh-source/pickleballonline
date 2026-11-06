@@ -13,13 +13,15 @@ Static, dependency-free MVP for the pickleball RPG concept. Open `index.html` di
 
 ## Supabase foundation
 
-The initial database migration is in `supabase/migrations/20261106000100_initial_schema.sql`. In Supabase, create a project, open **SQL Editor**, and run the migration there. It creates the profile/character, shop/inventory, tournament/bracket, wallet ledger, and public configuration tables; enables RLS; and creates a profile plus starter stats for each new Auth user.
+Run the migrations in order from `supabase/migrations/`: initial schema, secure training RPC, then tournament registration RPC. In Supabase, open **SQL Editor** and run each migration once. They create profile/character, shop/inventory, tournament/bracket, wallet ledger, configuration and training tables; enable RLS; and create a profile plus starter stats for each new Auth user.
 
 The browser can read its own profile, character stats, inventory, and ledger. A player may update only their display name and avatar. Client roles, balances, EXP, levels, stats, purchases, registrations, pairings, match results, and rewards are not writable directly; implement those through validated database functions or Supabase Edge Functions before wiring the UI to live data. Never put the Supabase `service_role` key in this repository or frontend.
 
 The frontend uses the public `sb_publishable_...` key in `supabase-config.js`; publishable keys are intended for browser use and are constrained by RLS. Email/password sign-up and sign-in load the player's profile and stats. After login, demo gameplay mutations are disabled until server-side functions are implemented. In Supabase **Authentication > URL Configuration**, set the Site URL and add `https://mrdungqnh-source.github.io/pickleballonline/` to the redirect URLs so confirmation links return to the app.
 
 Online training is implemented by `supabase/migrations/20261106000200_secure_training_rpc.sql`. Run it after the initial schema migration. The `complete_training()` RPC derives the player from `auth.uid()`, awards configured EXP, applies level-ups atomically, and limits training to five sessions per UTC day. The browser never supplies a reward amount or player ID. Other gameplay mutations remain disabled online until their own trusted RPCs are added.
+
+Tournament registration is implemented by `supabase/migrations/20261106000300_tournament_registration.sql`. It seeds two open random-pair tournaments and exposes `register_for_tournament()` to authenticated users only. The function checks the player's level, locks the tournament row while checking capacity, and creates the entry server-side. Match pairing, result resolution, and prizes are not enabled yet.
 
 ## Mechanics represented in the demo
 

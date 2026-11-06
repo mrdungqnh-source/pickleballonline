@@ -57,12 +57,13 @@ function render() {
   view.innerHTML = ({ home: renderHome, training: renderTraining, court: renderCourt, tournaments: renderTournaments, shop: renderShop, admin: renderAdmin }[route])();
   view.classList.toggle("arena-view", route === "court");
   if (route === "court") arenaController = createArenaController(view);
+  if (route === "tournaments") void loadTournamentList(view, authUser);
   if (route === "training") {
     const rewardNote = view.querySelector(".content-grid > .stack:last-child .panel:last-child p:last-child");
     rewardNote.textContent = `Mỗi cấp nhận ${state.config.skillPointsPerLevel} điểm kỹ năng và ${state.config.bodyPointsPerLevel} điểm cơ thể.`;
   }
   if (authUser) {
-    if (route !== "court") view.insertAdjacentHTML("afterbegin", '<div class="admin-warning online-notice">Đang xem hồ sơ Supabase thật. Tập luyện đã xử lý phía máy chủ; cửa hàng, phân bổ điểm và đăng ký giải vẫn là demo.</div>');
+    if (route !== "court") view.insertAdjacentHTML("afterbegin", '<div class="admin-warning online-notice">Đang xem hồ sơ Supabase thật. Tập luyện và đăng ký giải dùng xử lý phía máy chủ; cửa hàng và phân bổ điểm vẫn là demo.</div>');
     const trainingDescription = view.querySelector(".training-hero p");
     if (trainingDescription) trainingDescription.textContent = "+35 EXP mỗi buổi · tối đa 5 buổi/ngày UTC · lên cấp nhận điểm nâng cấp.";
     view.querySelectorAll('[data-action="body"], [data-action="skill"], [data-action="buy"], [data-action="register"], [data-action="save-config"]').forEach((button) => {
@@ -194,9 +195,76 @@ function renderTraining() {
 function renderTournaments() {
   return `${pageHeading("SEASON 04 · COMPETITIVE PLAY", "Giải đấu", "Đăng ký thi đấu, xây dựng đội hình và chinh phục bảng xếp hạng.")}
     <div class="balance-bar"><span>Hạng hiện tại <strong>Rookie</strong></span><span>Level <strong>${state.profile.level}</strong></span></div>
-    <section class="panel tournament-card"><div><div class="tourney-kicker">CÁ NHÂN · LEVEL 10+</div><h2>Rookie Rally</h2><p>Người chơi đăng ký cá nhân, hệ thống ghép đôi ngẫu nhiên khi giải bắt đầu.</p><div class="tourney-data"><span>Ngày thi đấu<strong>12 Tháng 11</strong></span><span>Người chơi<strong>24 / 64</strong></span><span>Thưởng<strong>EXP + điểm thưởng</strong></span></div></div><div class="tournament-status"><span class="status-pill live">ĐANG MỞ ĐĂNG KÝ</span><br/><button class="${state.registered ? "secondary-button" : "dark-button"}" data-action="register" ${state.registered ? "disabled" : ""}>${state.registered ? "✓ Đã đăng ký" : "Đăng ký cá nhân"}</button></div></section>
-    <section class="panel tournament-card"><div><div class="tourney-kicker">ĐÔI NGẪU NHIÊN · LEVEL 10+</div><h2>Club Championship</h2><p>32 đôi tranh chức vô địch mùa giải tại Courtside Club.</p><div class="tourney-data"><span>Ngày thi đấu<strong>18 Tháng 11</strong></span><span>Đội<strong>16 / 32</strong></span><span>Phần thưởng<strong>3 điểm kỹ năng + cơ thể</strong></span></div></div><div class="tournament-status"><span class="status-pill">SẮP MỞ</span><br/><button class="secondary-button" disabled>Chưa mở đăng ký</button></div></section>
+    <div id="tournament-list" class="tournament-list"><div class="empty-state">Đang tải giải đấu...</div></div>
     <section class="page-section panel panel-pad"><div class="panel-heading"><h2>Lộ trình thi đấu</h2><span class="status-pill">32 ĐÔI · SINGLE ELIMINATION</span></div><div class="bracket"><div class="bracket-round"><strong>VÒNG 1/16</strong><span>32 đội · 16 trận</span></div><div class="bracket-round"><strong>TỨ KẾT</strong><span>8 đội · 4 trận</span></div><div class="bracket-round"><strong>BÁN KẾT</strong><span>4 đội · 2 trận</span></div><div class="bracket-round"><strong>CHUNG KẾT</strong><span>2 đội · 1 trận</span></div></div></section>`;
+}
+
+async function loadTournamentList(view, user) {
+  const list = view.querySelector("#tournament-list");
+  if (!list) return;
+
+  const { data: tournaments, error } = await supabaseClient
+    .from("tournaments")
+    .select("id, name, level_bracket, max_pairs, matching_type, status, starts_at")
+    .in("status", ["open", "in_progress"])
+    .order("starts_at", { ascending: true });
+  if (!list.isConnected || currentRoute() !== "tournaments") return;
+  if (error) {
+    list.innerHTML = '<div class="empty-state">Chưa tải được giải đấu. Hãy tải lại trang.</div>';
+    console.error("Could not load tournaments", error);
+    return;
+  }
+  if (!tournaments?.length) {
+    list.innerHTML = '<div class="panel empty-state">Hiện chưa có giải đấu mở đăng ký.</div>';
+    return;
+  }
+
+  let entries = [];
+  if (user) {
+    const { data, error: entriesError } = await supabaseClient
+      .from("tournament_entries")
+      .select("tournament_id, status")
+      .eq("user_id", user.id);
+    if (!list.isConnected || currentRoute() !== "tournaments") return;
+    if (!entriesError) entries = data || [];
+  }
+
+  list.innerHTML = tournaments.map((tournament) => {
+    const entry = entries.find((item) => item.tournament_id === tournament.id);
+    const registered = entry && entry.status !== "withdrawn";
+    const isOpen = tournament.status === "open";
+    const starts = tournament.starts_at
+      ? new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "short" }).format(new Date(tournament.starts_at))
+      : "Chưa ấn định";
+    const registration = registered
+      ? '<span class="status-pill live">ĐÃ ĐĂNG KÝ</span>'
+      : isOpen && user
+        ? `<button class="dark-button" data-action="register-online" data-key="${tournament.id}">Đăng ký cá nhân</button>`
+        : isOpen
+          ? '<button class="secondary-button" data-action="auth">Đăng nhập để đăng ký</button>'
+          : '<button class="secondary-button" disabled>Đang diễn ra</button>';
+    return `<section class="panel tournament-card"><div><div class="tourney-kicker">${tournament.matching_type === "random" ? "CÁ NHÂN · GHÉP ĐÔI NGẪU NHIÊN" : "ĐÔI · MỜI BẠN CHƠI"} · LEVEL ${tournament.level_bracket}+</div><h2>${escapeHtml(tournament.name)}</h2><p>Đăng ký cá nhân, hệ thống ghép cặp khi giải bắt đầu.</p><div class="tourney-data"><span>Ngày thi đấu<strong>${starts}</strong></span><span>Sức chứa<strong>${tournament.max_pairs * 2} người</strong></span><span>Điều kiện<strong>Level ${tournament.level_bracket}+</strong></span></div></div><div class="tournament-status"><span class="status-pill ${isOpen ? "live" : ""}">${isOpen ? "ĐANG MỞ ĐĂNG KÝ" : "ĐANG DIỄN RA"}</span><br/>${registration}</div></section>`;
+  }).join("");
+}
+
+async function registerOnlineTournament(tournamentId, button) {
+  if (!authUser) return renderAuthModal("signin");
+  button.disabled = true;
+  const { data, error } = await supabaseClient.rpc("register_for_tournament", { p_tournament_id: tournamentId });
+  if (error) {
+    button.disabled = false;
+    const message = error.message?.includes("below this tournament bracket")
+      ? "Level của bạn chưa đủ điều kiện vào giải này."
+      : error.message?.includes("Already registered")
+        ? "Bạn đã đăng ký giải này rồi."
+        : error.message?.includes("registration is full")
+          ? "Giải đã đủ người đăng ký."
+          : "Chưa thể đăng ký giải. Hãy tải lại và thử lại.";
+    notify(message);
+    return;
+  }
+  notify(`Đăng ký thành công · ${data.entries_count}/${data.max_players} người.`);
+  await loadTournamentList(document.querySelector("#view"), authUser);
 }
 function renderShop() {
   const categories = ["Tất cả", "Vợt", "Áo", "Giày", "Mũ", "Kính"];
@@ -764,6 +832,8 @@ document.addEventListener("click", (event) => {
     } else renderAuthModal("signin");
   } else if (action === "auth-toggle") {
     renderAuthModal(authMode === "signin" ? "signup" : "signin");
+  } else if (action === "register-online") {
+    void registerOnlineTournament(key, control);
   } else if (action.startsWith("arena-")) {
     arenaController?.handle(action, key);
   } else if (action === "train") {
