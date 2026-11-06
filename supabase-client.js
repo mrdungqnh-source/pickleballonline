@@ -1,12 +1,10 @@
-const config = window.SUPABASE_CONFIG;
-const createClient = window.supabase?.createClient;
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "./supabase-config.js";
 
-window.courtsideSupabase = config && createClient
-  ? createClient(config.url, config.publishableKey, {
-    auth: {
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-      persistSession: true
-    }
-  })
-  : null;
+export const supabaseClient = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: {
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    persistSession: true
+  }
+});
